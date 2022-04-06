@@ -1,4 +1,4 @@
-module example.com/m
+module kproxy/m
 
 go 1.17
 

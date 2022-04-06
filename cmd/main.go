@@ -7,9 +7,10 @@ import (
 func main() {
 
 	//tcp part
-	p := first.Proxy{}
-	p.Run()
+	p := first.Proxy{
 
+	}
+	p.Run()
 
 
 }

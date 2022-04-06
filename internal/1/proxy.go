@@ -1,20 +1,33 @@
 package first
 
 import (
+	"crypto/tls"
 	"fmt"
 	"github.com/oriser/regroup"
 	"log"
+	"math/rand"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-var wh = regexp.MustCompile("\r\n")
-var cp = regexp.MustCompile("[Pp]roxy-[Cc]onnection:")
-var tp = regexp.MustCompile("(?:GET|POST|HEAD|OPTIONS).*")
-var hp0 = regexp.MustCompile("(?P<name>Host):(?P<host>.*)(?P<port>:(\\d{1,3}))?")
-var hp = regroup.MustCompile("(?P<name>Host):(?P<host>.*)(?P<port>:(\\d{1,3}))?")
+const (
+	HTTPS_START_MESSAGE = "HTTP/1.0 200 Connection established\\r\\nProxy-agent: Kproxy\\r\\n\\r\\n"
+)
+
+var (
+	wh = regexp.MustCompile("\r\n")
+	cp = regexp.MustCompile("[Pp]roxy-[Cc]onnection:")
+	tp = regexp.MustCompile("(?:GET|POST|HEAD|OPTIONS).*")
+	secure = regexp.MustCompile("CONNECT")
+	hp0 = regexp.MustCompile("(?P<name>Host):(?P<host>.*)(?P<port>:(\\d{1,3}))?")
+	hp = regroup.MustCompile("(?P<name>Host):(?P<host>.*)(?P<port>:(\\d{1,3}))?")
+)
 
 type Proxy struct {
 	//tls later?
@@ -61,7 +74,15 @@ func parseConnection(conn net.Conn) {
 		full = append(full, b...)
 	}
 
+
+	//here we need to check if this is secure connection
+
 	message := string(full)
+
+	if isSecure(message) {
+
+	}
+
 	message = strings.TrimSpace(message)
 	messages := wh.Split(message, -1)
 	cmessages := make([]string, 0, 0)
@@ -132,4 +153,37 @@ func writeRequest(conn net.Conn, msg []byte) {
 	}
 	//answer := GetRequest(conn)
 	//return answer.FullMsg
+}
+
+
+func parseSecureConnection(conn net.Conn) error {
+
+	//answer immediately
+	writeRequest(conn, []byte(HTTPS_START_MESSAGE))
+	//get current path
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		return err
+	}
+	//generate certificates
+	err = exec.Command(dir+"/gen_cert.sh", "", strconv.Itoa(rand.Int())).Run()
+	if err != nil {
+		return err
+	}
+
+	cert, err := tls.LoadX509KeyPair(dir+"/mitm.crt", dir+"/cert.key")
+	if err != nil {
+		panic(err)
+	}
+
+	cfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+	serv := tls.Server(conn, cfg)
+	defer serv.Close()
+	defer conn.Close()
+
+	return nil
+}
+
+func isSecure(message string) bool {
+	return false
 }
