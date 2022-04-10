@@ -57,7 +57,7 @@ func (p *Proxy) RepeateOne(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := http.DefaultClient
-	do, err := client.Do(&request)
+	do, err := client.Do(request)
 	if err != nil {
 		return
 	}

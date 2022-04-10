@@ -57,14 +57,8 @@ func (p Proxy) Run() {
 func (p Proxy) execConnection(conn net.Conn) {
 	defer conn.Close()
 
-	//data for connection
-	var (
-		host string
-		port string
-	)
-
 	//read full message
-	full, err := p.readMessage(conn)
+	full, _ := p.readMessage(conn)
 
 	//here we need to check if this is secure connection
 	r := bytes.NewReader(full)
@@ -72,56 +66,12 @@ func (p Proxy) execConnection(conn net.Conn) {
 	req, _ := http.ReadRequest(reader)
 	log.Println(req)
 
-	message := string(full)
-
-	message = strings.TrimSpace(message)
-	messages := wh.Split(message, -1)
-	cmessages := make([]string, 0, 0)
-
-	//log.Printf("%+v",messages)
-	for i := 0; i < len(messages); i++ {
-
-		//parse host+port
-		if hp0.MatchString(messages[i]) {
-			groups, _ := hp.Groups(messages[i])
-			host = groups["host"]
-			host = strings.TrimSpace(host)
-			port = groups["port"]
-			if port == "" {
-				port = ":80"
-			}
-
-			port = strings.TrimSpace(port)
-			log.Print(host, port)
-		}
-		if tp.MatchString(messages[i]) {
-			//cmessage := strings.Replace(messages[i], "http", "", -1)
-			//cmessages = append(cmessages, cmessage)
-			//continue
-		}
-
-		//delete proxy-connection
-		if cp.MatchString(messages[i]) {
-			continue
-		}
-		cmessages = append(cmessages, messages[i])
+	if req.Method == http.MethodConnect {
+		p.parseSecureConnection(conn, req.Host, string(full))
+	} else {
+		p.parseConnection(conn, req, string(full))
 	}
 
-	if isSecure(message) {
-		p.parseSecureConnection(conn, host, message)
-	}
-
-	dial, err := net.Dial("tcp", host+port)
-	if err != nil {
-		return
-	}
-	defer dial.Close()
-	dial.SetReadDeadline(time.Now().Add(time.Second))
-	writeMessage(dial, []byte(strings.Join(cmessages, "\r\n")))
-
-	full, err = p.readMessage(dial)
-
-	writeMessage(conn, full)
 }
 
 func (p Proxy) readMessage(conn net.Conn) ([]byte, error) {
@@ -159,7 +109,7 @@ func writeMessage(conn net.Conn, msg []byte) {
 	//return answer.FullMsg
 }
 
-func (p Proxy) parseSecureConnection(conn net.Conn, host, message string) error {
+func (p *Proxy) parseSecureConnection(conn net.Conn, host, message string) error {
 
 	//answer immediately
 	writeMessage(conn, []byte(HTTPS_START_MESSAGE))
@@ -207,10 +157,6 @@ func (p Proxy) parseSecureConnection(conn net.Conn, host, message string) error 
 	return nil
 }
 
-func isSecure(message string) bool {
-
-	return secure.MatchString(message)
-}
 
 func SendMessage(conn net.Conn, msg []byte) error {
 	bytesSent := 0
@@ -221,5 +167,29 @@ func SendMessage(conn net.Conn, msg []byte) error {
 		}
 		bytesSent += n
 	}
+	return nil
+}
+
+
+func (p *Proxy) parseConnection(conn net.Conn, req *http.Request, message string) error {
+
+	if !strings.Contains(req.Host, ":"){
+		req.Host += ":80"
+	}
+	dial, err := net.Dial("tcp", req.Host)
+	if err != nil {
+		return err
+	}
+	defer dial.Close()
+	dial.SetReadDeadline(time.Now().Add(time.Second))
+	writeMessage(dial, []byte(message))
+
+	full, err := p.readMessage(dial)
+	if err != nil {
+		return err
+	}
+	writeMessage(conn, full)
+	p.writeRequest(message)
+	p.getRequest(2)
 	return nil
 }
